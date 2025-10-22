@@ -1,0 +1,121 @@
+package config
+
+import (
+	"errors"
+	"os"
+)
+
+// Config holds the configuration for connecting to an Ethereum client
+type Config struct {
+	Network         string
+	Url             string
+	From            string // Will be updated with derived address from PrivateKey
+	ToContract      string // Will be updated with deployed contract address
+	PrivateKey      string
+	ChainID         int64
+	InvalidContract string
+	LocalNodeType   string // Type of local node: "besu", "geth", "reth", etc.
+}
+
+var (
+	zkSyncConfig = Config{
+		Network:         "zksync",
+		Url:             "https://zksync2-testnet.zksync.dev",
+		PrivateKey:      os.Getenv("PRIVATE_KEY"),
+		ChainID:         280,
+		InvalidContract: "0x0baEAd25fe0346B76C73e84c083bb503c14309F1",
+	}
+
+	sepoliaConfig = Config{
+		Network:         "Sepolia",
+		Url:             "https://ethereum-sepolia-rpc.publicnode.com",
+		PrivateKey:      os.Getenv("PRIVATE_KEY"),
+		ToContract:      "0x3a059AC08A7A27e972DBDD00E4595742471137d8",
+		ChainID:         11155111,
+		InvalidContract: "0x0baEAd25fe0346B76C73e84c083bb503c14309F1",
+	}
+
+	zkEVMConfig = Config{
+		Network:         "zkEVM",
+		Url:             "https://rpc.public.zkevm-test.net",
+		PrivateKey:      os.Getenv("PRIVATE_KEY"),
+		ChainID:         1442,
+		InvalidContract: "0x0baEAd25fe0346B76C73e84c083bb503c14309F1",
+	}
+
+	besuLocalConfig = Config{
+		Network:         "besu-local",
+		Url:             "http://localhost:8545",
+		PrivateKey:      os.Getenv("PRIVATE_KEY"), // Default dev private key
+		ChainID:         1337,
+		InvalidContract: "0x0baEAd25fe0346B76C73e84c083bb503c14309F1",
+		LocalNodeType:   "besu",
+	}
+
+	// Local Geth node configuration
+	gethLocalConfig = Config{
+		Network:         "geth-local",
+		Url:             "http://localhost:8545",
+		PrivateKey:      os.Getenv("PRIVATE_KEY"),
+		ChainID:         1337,
+		InvalidContract: "0x0baEAd25fe0346B76C73e84c083bb503c14309F1",
+		LocalNodeType:   "geth",
+	}
+
+	// Local Reth node configuration
+	rethLocalConfig = Config{
+		Network:         "reth-local",
+		Url:             "http://localhost:8545",
+		PrivateKey:      os.Getenv("PRIVATE_KEY"),
+		ChainID:         1337,
+		InvalidContract: "0x0baEAd25fe0346B76C73e84c083bb503c14309F1",
+		LocalNodeType:   "reth",
+	}
+
+	// Local Nethermind node configuration
+	nethermindLocalConfig = Config{
+		Network:         "nethermind-local",
+		Url:             "http://localhost:8545",
+		PrivateKey:      os.Getenv("PRIVATE_KEY"), // Dev mode test private key
+		ChainID:         1337,
+		InvalidContract: "0x0baEAd25fe0346B76C73e84c083bb503c14309F1",
+		LocalNodeType:   "nethermind",
+	}
+
+	// Local Erigon node configuration
+	erigonLocalConfig = Config{
+		Network:         "erigon-local",
+		Url:             "http://localhost:8545",
+		PrivateKey:      os.Getenv("PRIVATE_KEY"),
+		ChainID:         1337,
+		InvalidContract: "0x0baEAd25fe0346B76C73e84c083bb503c14309F1",
+		LocalNodeType:   "erigon",
+	}
+)
+
+func GetConfig(env string) (Config, error) {
+	switch env {
+	case "zksync":
+		return zkSyncConfig, nil
+	case "sepolia":
+		return sepoliaConfig, nil
+	case "zkevm":
+		return zkEVMConfig, nil
+	case "besu-local", "besu":
+		return besuLocalConfig, nil
+	case "geth-local", "geth":
+		return gethLocalConfig, nil
+	case "reth-local", "reth":
+		return rethLocalConfig, nil
+	case "nethermind-local", "nethermind":
+		return nethermindLocalConfig, nil
+	case "erigon-local", "erigon":
+		return erigonLocalConfig, nil
+	default:
+		return Config{}, errors.New("invalid environment: " + env)
+	}
+}
+
+func (c *Config) IsLocalNode() bool {
+	return c.LocalNodeType != ""
+}
