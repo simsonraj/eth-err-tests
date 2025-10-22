@@ -1,4 +1,4 @@
-# EIP Test Scripts
+# Ethereum Clients Error Codes Test suite
 
 Test suite for validating error code implementations across different Ethereum clients.
 
