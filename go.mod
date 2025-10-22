@@ -4,6 +4,7 @@ go 1.25
 
 require (
 	github.com/ethereum/go-ethereum v1.14.3
+	github.com/spf13/cobra v1.10.1
 	github.com/zksync-sdk/zksync2-go v1.1.0
 )
 
@@ -25,9 +26,11 @@ require (
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/holiman/uint256 v1.2.4 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mmcloughlin/addchain v0.4.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/shirou/gopsutil v3.21.11+incompatible // indirect
+	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/stephenlacy/go-ethereum-hdwallet v0.0.0-20230913225845-a4fa94429863 // indirect
 	github.com/supranational/blst v0.3.11 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
