@@ -2,12 +2,19 @@ package localnode
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math/big"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/eth-error-tests/pkg/config"
+	"github.com/eth-error-tests/pkg/jsonrpc"
+	pkgTypes "github.com/eth-error-tests/pkg/types"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
@@ -24,7 +31,7 @@ func NewNodeManager(cfg config.Config) *NodeManager {
 	}
 }
 
-func (nm *NodeManager) Start() (string, error) {
+func (nm *NodeManager) StartAndFund() (string, error) {
 	if !nm.config.IsLocalNode() {
 		return "", nil
 	}
@@ -57,6 +64,33 @@ func (nm *NodeManager) Start() (string, error) {
 			"--gpo.ignoreprice", "0",
 			"--password", "/dev/null", // Empty password for dev mode
 		)
+	case "besu":
+		// Get the absolute path to the genesis.json file
+		_, currentFile, _, _ := runtime.Caller(0)
+		pkgDir := filepath.Dir(currentFile)
+		genesisPath := filepath.Join(pkgDir, "besu", "genesis.json")
+		// https://besu.hyperledger.org/public-networks/reference/cli/options#min-priority-fee
+		cmd = exec.Command("docker", "run", "-d",
+			"--name", containerName,
+			"-p", "8545:8545",
+			// https://github.com/hyperledger/besu/blob/750580dcca349d22d024cc14a8171b2fa74b505a/config/src/main/resources/dev.json
+			"-v", fmt.Sprintf("%s:/genesis.json:ro", genesisPath), // Mount genesis file as read-only
+			"hyperledger/besu:latest",
+			"--genesis-file=/genesis.json",
+			"--miner-enabled",
+			"--miner-coinbase=0xfe3b557e8fb62b89f4916b721be55ceb828dbd73",
+			"--rpc-http-enabled",
+			"--rpc-http-host=0.0.0.0",
+			"--rpc-http-port=8545",
+			"--rpc-http-api=ETH,NET,WEB3,DEBUG",
+			"--rpc-http-cors-origins=*",
+			"--host-allowlist=*",
+			"--rpc-gas-cap=167700000",
+			"--min-gas-price=10",
+			"--min-priority-fee=10",
+			"--rpc-tx-feecap=100000000000",
+			"--logging=DEBUG",
+		)
 	default:
 		return "", fmt.Errorf("unsupported client: %s", nm.config.LocalNodeType)
 	}
@@ -83,6 +117,13 @@ func (nm *NodeManager) Start() (string, error) {
 		return "", fmt.Errorf("failed to get dev account: %w", err)
 	}
 
+	if devAccount != "" {
+		fmt.Printf("Using Dev account: %s\n", devAccount)
+		if err := nm.FundAccount(devAccount, nm.config.From); err != nil {
+			return "", fmt.Errorf("failed to fund test account: %w", err)
+		}
+	}
+
 	return devAccount, nil
 }
 
@@ -106,35 +147,42 @@ func (nm *NodeManager) waitForNode() error {
 	return fmt.Errorf("timeout")
 }
 
-// need to fix this instead of curl, it should be an raw RPC call
 func (nm *NodeManager) getDevAccount() (string, error) {
-	cmd := exec.Command("curl", "-s", "-X", "POST",
-		"http://localhost:8545",
-		"-H", "Content-Type: application/json",
-		"--data", `{"jsonrpc":"2.0","method":"eth_accounts","params":[],"id":1}`)
+	request := pkgTypes.JsonRpcRequest{
+		JsonRpc: "2.0",
+		Method:  "eth_accounts",
+		Params:  []interface{}{},
+		Id:      1,
+	}
 
-	output, err := cmd.CombinedOutput()
+	response, err := jsonrpc.SendRawJSONRPCRequest(nm.config.Url, []pkgTypes.JsonRpcRequest{request})
 	if err != nil {
 		return "", fmt.Errorf("failed to query accounts: %w", err)
 	}
 
-	outputStr := string(output)
-	if strings.Contains(outputStr, `"error"`) {
-		return "", fmt.Errorf("RPC error: %s", outputStr)
-	}
-	start := strings.Index(outputStr, `"result":["`) + len(`"result":["`)
-	if start < len(`"result":["`) {
-		return "", fmt.Errorf("no accounts found in response: %s", outputStr)
+	var batchResult []map[string]interface{}
+	if err := json.Unmarshal([]byte(response), &batchResult); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	end := strings.Index(outputStr[start:], `"`)
-	if end < 0 {
-		return "", fmt.Errorf("failed to parse account address from: %s", outputStr)
+	if len(batchResult) == 0 {
+		return "", fmt.Errorf("empty response")
 	}
 
-	address := outputStr[start : start+end]
-	if address == "" || !strings.HasPrefix(address, "0x") {
-		return "", fmt.Errorf("invalid address format: %s", address)
+	result := batchResult[0]
+	if errObj, ok := result["error"]; ok {
+		return "", fmt.Errorf("RPC error: %v", errObj)
+	}
+
+	// Parse the accounts array
+	resultData, ok := result["result"].([]interface{})
+	if !ok || len(resultData) == 0 {
+		return "", nil
+	}
+
+	address, ok := resultData[0].(string)
+	if !ok || address == "" || !strings.HasPrefix(address, "0x") {
+		return "", fmt.Errorf("invalid address format: %v", resultData[0])
 	}
 
 	return address, nil
@@ -153,4 +201,77 @@ func (nm *NodeManager) Stop() error {
 
 func (nm *NodeManager) IsRunning() bool {
 	return nm.started
+}
+
+// FundAccount funds a target account from the dev account
+func (nm *NodeManager) FundAccount(fromAddr, toAddr string) error {
+	client, err := ethclient.Dial(nm.config.Url)
+	if err != nil {
+		return fmt.Errorf("failed to connect to node: %w", err)
+	}
+	defer client.Close()
+
+	to := common.HexToAddress(toAddr)
+
+	balance, err := client.BalanceAt(context.Background(), to, nil)
+	if err != nil {
+		return fmt.Errorf("failed to check balance: %w", err)
+	}
+
+	oneEth := new(big.Int).Mul(big.NewInt(1), big.NewInt(1e18))
+	if balance.Cmp(oneEth) > 0 {
+		return nil
+	}
+
+	var txHash string
+	if nm.config.LocalNodeType == "geth" {
+		// Geth dev mode has unlocked accounts, use eth_sendTransaction
+		txHash, err = nm.fundAccountUnlocked(fromAddr, toAddr)
+		if err != nil {
+			return err
+		}
+		receipt, err := jsonrpc.WaitForTransaction(client, txHash)
+		if err != nil {
+			return err
+		}
+		if receipt.Status == 1 {
+			balance, err := client.BalanceAt(context.Background(), to, nil)
+			if err != nil {
+				return fmt.Errorf("failed to verify balance: %w", err)
+			}
+			fmt.Printf("Test account: %s funded: (balance: %s wei)\n", to.Hex(), balance.String())
+		}
+	}
+
+	return nil
+}
+
+func (nm *NodeManager) fundAccountUnlocked(fromAddr, toAddr string) (string, error) {
+	value := "0x56bc75e2d63100000" // 100 ETH in hex
+
+	txParams := map[string]interface{}{
+		"from":  fromAddr,
+		"to":    toAddr,
+		"value": value,
+		"gas":   "0x5208", // 21000
+	}
+
+	request := pkgTypes.JsonRpcRequest{
+		JsonRpc: "2.0",
+		Method:  "eth_sendTransaction",
+		Params:  []interface{}{txParams},
+		Id:      1,
+	}
+
+	response, err := jsonrpc.SendRawJSONRPCRequest(nm.config.Url, []pkgTypes.JsonRpcRequest{request})
+	if err != nil {
+		return "", fmt.Errorf("failed to send transaction: %w", err)
+	}
+
+	txhashes, err := jsonrpc.BatchResponseToTxHashes(response)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse transaction hash: %w", err)
+	}
+
+	return txhashes[0], nil
 }

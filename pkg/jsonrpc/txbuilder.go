@@ -7,7 +7,7 @@ import (
 	"math/big"
 
 	"github.com/eth-error-tests/pkg/config"
-	local_types "github.com/eth-error-tests/pkg/types"
+	pkgTypes "github.com/eth-error-tests/pkg/types"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -15,10 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-// Modifier is a function that modifies transaction parameters to simulate different scenarios
-type Modifier func(ctx context.Context, client *ethclient.Client, params *local_types.TxParams) error
-
-func NewTxParamsFromDefaults(ctx context.Context, client *ethclient.Client, cfg config.Config, privateKey *ecdsa.PrivateKey, toAddress common.Address, input []byte) (*local_types.TxParams, error) {
+func NewTxParamsFromDefaults(ctx context.Context, client *ethclient.Client, cfg config.Config, privateKey *ecdsa.PrivateKey, toAddress common.Address, input []byte) (*pkgTypes.TxParams, error) {
 	fromAddress := crypto.PubkeyToAddress(privateKey.PublicKey)
 
 	// Get nonce
@@ -55,7 +52,7 @@ func NewTxParamsFromDefaults(ctx context.Context, client *ethclient.Client, cfg 
 		gasFeeCap = new(big.Int).Add(header.BaseFee, big.NewInt(10000000000)) // baseFee + 10 gwei
 	}
 
-	return &local_types.TxParams{
+	return &pkgTypes.TxParams{
 		Nonce:       nonce,
 		To:          &toAddress,
 		Value:       big.NewInt(0),
@@ -71,7 +68,7 @@ func NewTxParamsFromDefaults(ctx context.Context, client *ethclient.Client, cfg 
 	}, nil
 }
 
-func BuildTransaction(params *local_types.TxParams) *types.Transaction {
+func BuildTransaction(params *pkgTypes.TxParams) *types.Transaction {
 	if params.IsDynamic && params.GasTipCap != nil && params.GasFeeCap != nil {
 		return types.NewTx(&types.DynamicFeeTx{
 			ChainID:   big.NewInt(params.ChainID),
@@ -87,7 +84,7 @@ func BuildTransaction(params *local_types.TxParams) *types.Transaction {
 	return types.NewTransaction(params.Nonce, *params.To, params.Value, params.Gas, params.GasPrice, params.Data)
 }
 
-func SignTransaction(tx *types.Transaction, params *local_types.TxParams) (*types.Transaction, error) {
+func SignTransaction(tx *types.Transaction, params *pkgTypes.TxParams) (*types.Transaction, error) {
 	var signer types.Signer
 	switch tx.Type() {
 	case types.DynamicFeeTxType: // 0x02 (EIP-1559)
@@ -100,10 +97,10 @@ func SignTransaction(tx *types.Transaction, params *local_types.TxParams) (*type
 }
 
 // --- Generic Modifiers with Transformation Functions ---
-func GasLimitModifier(value uint64, transform func(current uint64) uint64) Modifier {
-	return func(ctx context.Context, client *ethclient.Client, params *local_types.TxParams) error {
+func GasLimitModifier(cfg config.Config, value uint64, transform func(cfg config.Config, current uint64) uint64) pkgTypes.Modifier {
+	return func(ctx context.Context, client *ethclient.Client, params *pkgTypes.TxParams) error {
 		if transform != nil {
-			params.Gas = transform(params.Gas)
+			params.Gas = transform(cfg, params.Gas)
 		} else {
 			params.Gas = value
 		}
@@ -111,21 +108,23 @@ func GasLimitModifier(value uint64, transform func(current uint64) uint64) Modif
 	}
 }
 
-func GasPriceModifier(value *big.Int, transform func(current *big.Int) *big.Int) Modifier {
-	return func(ctx context.Context, client *ethclient.Client, params *local_types.TxParams) error {
+func GasPriceModifier(value *big.Int, transform func(current *big.Int) *big.Int) pkgTypes.Modifier {
+	return func(ctx context.Context, client *ethclient.Client, params *pkgTypes.TxParams) error {
 		// if !params.IsDynamic {
 		if transform != nil {
 			params.GasPrice = transform(params.GasPrice)
+			params.IsDynamic = false
 		} else {
 			params.GasPrice = new(big.Int).Set(value)
+			params.IsDynamic = false
 		}
 		// }
 		return nil
 	}
 }
 
-func GasTipCapModifier(value *big.Int, transform func(current *big.Int) *big.Int) Modifier {
-	return func(ctx context.Context, client *ethclient.Client, params *local_types.TxParams) error {
+func GasTipCapModifier(value *big.Int, transform func(current *big.Int) *big.Int) pkgTypes.Modifier {
+	return func(ctx context.Context, client *ethclient.Client, params *pkgTypes.TxParams) error {
 		if params.IsDynamic {
 			if transform != nil {
 				params.GasTipCap = transform(params.GasTipCap)
@@ -137,8 +136,8 @@ func GasTipCapModifier(value *big.Int, transform func(current *big.Int) *big.Int
 	}
 }
 
-func GasFeeCapModifier(value *big.Int, transform func(current *big.Int) *big.Int) Modifier {
-	return func(ctx context.Context, client *ethclient.Client, params *local_types.TxParams) error {
+func GasFeeCapModifier(value *big.Int, transform func(current *big.Int) *big.Int) pkgTypes.Modifier {
+	return func(ctx context.Context, client *ethclient.Client, params *pkgTypes.TxParams) error {
 		if params.IsDynamic {
 			if transform != nil {
 				params.GasFeeCap = transform(params.GasFeeCap)
@@ -150,15 +149,15 @@ func GasFeeCapModifier(value *big.Int, transform func(current *big.Int) *big.Int
 	}
 }
 
-func ValueModifier(value *big.Int) Modifier {
-	return func(ctx context.Context, client *ethclient.Client, params *local_types.TxParams) error {
+func ValueModifier(value *big.Int) pkgTypes.Modifier {
+	return func(ctx context.Context, client *ethclient.Client, params *pkgTypes.TxParams) error {
 		params.Value = new(big.Int).Set(value)
 		return nil
 	}
 }
 
-func ValueFromBalanceModifier(offsetWei int64) Modifier {
-	return func(ctx context.Context, client *ethclient.Client, params *local_types.TxParams) error {
+func ValueFromBalanceModifier(offsetWei int64) pkgTypes.Modifier {
+	return func(ctx context.Context, client *ethclient.Client, params *pkgTypes.TxParams) error {
 		balance, err := client.BalanceAt(ctx, params.FromAddress, nil)
 		if err != nil {
 			return fmt.Errorf("error getting balance: %w", err)
@@ -168,8 +167,8 @@ func ValueFromBalanceModifier(offsetWei int64) Modifier {
 	}
 }
 
-func NonceModifier(value uint64, transform func(current uint64) uint64) Modifier {
-	return func(ctx context.Context, client *ethclient.Client, params *local_types.TxParams) error {
+func NonceModifier(value uint64, transform func(current uint64) uint64) pkgTypes.Modifier {
+	return func(ctx context.Context, client *ethclient.Client, params *pkgTypes.TxParams) error {
 		if transform != nil {
 			params.Nonce = transform(params.Nonce)
 		} else {
@@ -179,23 +178,23 @@ func NonceModifier(value uint64, transform func(current uint64) uint64) Modifier
 	}
 }
 
-func DataModifier(data []byte) Modifier {
-	return func(ctx context.Context, client *ethclient.Client, params *local_types.TxParams) error {
+func DataModifier(data []byte) pkgTypes.Modifier {
+	return func(ctx context.Context, client *ethclient.Client, params *pkgTypes.TxParams) error {
 		params.Data = make([]byte, len(data))
 		copy(params.Data, data)
 		return nil
 	}
 }
 
-func DataSizeModifier(sizeBytes int) Modifier {
-	return func(ctx context.Context, client *ethclient.Client, params *local_types.TxParams) error {
+func DataSizeModifier(sizeBytes int) pkgTypes.Modifier {
+	return func(ctx context.Context, client *ethclient.Client, params *pkgTypes.TxParams) error {
 		params.Data = make([]byte, sizeBytes)
 		return nil
 	}
 }
 
-func PrivateKeyModifier(privateKeyHex string) Modifier {
-	return func(ctx context.Context, client *ethclient.Client, params *local_types.TxParams) error {
+func PrivateKeyModifier(privateKeyHex string) pkgTypes.Modifier {
+	return func(ctx context.Context, client *ethclient.Client, params *pkgTypes.TxParams) error {
 		privateKey, err := crypto.HexToECDSA(privateKeyHex)
 		if err != nil {
 			return fmt.Errorf("error loading private key: %w", err)
@@ -212,16 +211,16 @@ func PrivateKeyModifier(privateKeyHex string) Modifier {
 	}
 }
 
-func ToAddressModifier(address string) Modifier {
-	return func(ctx context.Context, client *ethclient.Client, params *local_types.TxParams) error {
+func ToAddressModifier(address string) pkgTypes.Modifier {
+	return func(ctx context.Context, client *ethclient.Client, params *pkgTypes.TxParams) error {
 		addr := common.HexToAddress(address)
 		params.To = &addr
 		return nil
 	}
 }
 
-func InvalidFunctionSigModifier(functionSig string, argValue uint64) Modifier {
-	return func(ctx context.Context, client *ethclient.Client, params *local_types.TxParams) error {
+func InvalidFunctionSigModifier(functionSig string, argValue uint64) pkgTypes.Modifier {
+	return func(ctx context.Context, client *ethclient.Client, params *pkgTypes.TxParams) error {
 		sig := crypto.Keccak256([]byte(functionSig))[:4]
 		arg := common.LeftPadBytes(new(big.Int).SetUint64(argValue).Bytes(), 32)
 		params.Data = append(sig, arg...)

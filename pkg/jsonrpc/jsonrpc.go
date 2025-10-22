@@ -9,11 +9,14 @@ import (
 	"math/big"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/eth-error-tests/pkg/config"
 	"github.com/eth-error-tests/pkg/types"
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	gethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
@@ -176,6 +179,14 @@ func SendTransaction(ctx context.Context, client *ethclient.Client, cfg config.C
 	} else {
 		fmt.Println("Response:", response)
 	}
+	hashes, err := BatchResponseToTxHashes(response)
+	if err != nil {
+		return fmt.Errorf("failed to parse transaction hashes from response: %w", err)
+	}
+
+	if len(hashes) != 0 {
+		WaitForTransaction(client, hashes[0])
+	}
 
 	return nil
 }
@@ -192,4 +203,38 @@ func BuildDefaultInput() ([]byte, error) {
 	}
 
 	return input, nil
+}
+
+func WaitForTransaction(client *ethclient.Client, txHash string) (*gethTypes.Receipt, error) {
+	tx, isPending, err := client.TransactionByHash(context.Background(), common.HexToHash(txHash))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transaction receipt: %w", err)
+	}
+	var receipt *gethTypes.Receipt
+	if isPending {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		receipt, err = bind.WaitMined(ctx, client, tx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to wait for transaction mining: %w", err)
+		}
+	}
+
+	return receipt, nil
+}
+
+func BatchResponseToTxHashes(response string) ([]string, error) {
+	var batchResult []map[string]interface{}
+	if err := json.Unmarshal([]byte(response), &batchResult); err != nil {
+		return nil, fmt.Errorf("failed to parse batch response: %w", err)
+	}
+
+	txHashes := make([]string, 0, len(batchResult))
+	for _, res := range batchResult {
+		if result, ok := res["result"].(string); ok {
+			txHashes = append(txHashes, result)
+		}
+	}
+
+	return txHashes, nil
 }

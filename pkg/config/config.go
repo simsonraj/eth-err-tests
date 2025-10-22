@@ -46,7 +46,7 @@ var (
 	besuLocalConfig = Config{
 		Network:         "besu-local",
 		Url:             "http://localhost:8545",
-		PrivateKey:      os.Getenv("PRIVATE_KEY"), // Default dev private key
+		PrivateKey:      os.Getenv("PRIVATE_KEY"), // Get private key from https://besu.hyperledger.org/private-networks/reference/accounts-for-testing
 		ChainID:         1337,
 		InvalidContract: "0x0baEAd25fe0346B76C73e84c083bb503c14309F1",
 		LocalNodeType:   "besu",

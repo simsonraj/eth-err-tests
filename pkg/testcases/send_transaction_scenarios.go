@@ -6,6 +6,7 @@ import (
 	"math/big"
 
 	"github.com/eth-error-tests/pkg/config"
+	txbuilder "github.com/eth-error-tests/pkg/jsonrpc"
 	pkgTypes "github.com/eth-error-tests/pkg/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -24,7 +25,7 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 			Desc:   "UseInvalidFunction",
 			Method: "eth_wrongSendRawTransaction",
 			Modifiers: []pkgTypes.Modifier{
-				InvalidFunctionSigModifier("invalidFunction(uint256)", 20),
+				txbuilder.InvalidFunctionSigModifier("invalidFunction(uint256)", 20),
 			},
 		},
 		{
@@ -32,7 +33,7 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 			Desc:   "NONCE_TOO_LOW",
 			Method: "eth_sendRawTransaction",
 			Modifiers: []pkgTypes.Modifier{
-				NonceModifier(0, nil), // Set nonce to 0
+				txbuilder.NonceModifier(0, nil), // Set nonce to 0
 			},
 		},
 		{
@@ -40,7 +41,7 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 			Desc:   "NONCE_TOO_HIGH", // DOesnt work
 			Method: "eth_sendRawTransaction",
 			Modifiers: []pkgTypes.Modifier{
-				NonceModifier(0, func(current uint64) uint64 { return current + 10000 }),
+				txbuilder.NonceModifier(0, func(current uint64) uint64 { return current + 100 }),
 			},
 		},
 		{
@@ -48,7 +49,33 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 			Desc:   "OVERSIZED_DATA",
 			Method: "eth_sendRawTransaction",
 			Modifiers: []pkgTypes.Modifier{
-				DataSizeModifier(1024 * 1024), // 1 MB
+				txbuilder.DataSizeModifier(1024 * 1024), // 1 MB
+			},
+		},
+		{
+			ID:     11,
+			Desc:   "GAS_PRICE_TOO_LOW-Legacy",
+			Method: "eth_sendRawTransaction",
+			Modifiers: []pkgTypes.Modifier{
+				txbuilder.GasPriceModifier(big.NewInt(0), nil),
+			},
+		},
+		{
+			ID:     11,
+			Desc:   "GAS_PRICE_TOO_LOW-Dynamic",
+			Method: "eth_sendRawTransaction",
+			Modifiers: []pkgTypes.Modifier{
+				txbuilder.GasTipCapModifier(big.NewInt(0), nil),
+				txbuilder.GasFeeCapModifier(big.NewInt(0), nil),
+			},
+		},
+		{
+			ID:     12,
+			Desc:   "FEE_CAP_EXCEEDED",
+			Method: "eth_sendRawTransaction",
+			Modifiers: []pkgTypes.Modifier{
+				txbuilder.GasLimitModifier(cfg, 16_000_000, nil),
+				txbuilder.GasPriceModifier(big.NewInt(200000000000), nil),
 			},
 		},
 		{
@@ -56,7 +83,7 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 			Desc:   "BLOCK_GAS_LIMIT_EXCEEDED",
 			Method: "eth_sendRawTransaction",
 			Modifiers: []pkgTypes.Modifier{
-				GasLimitModifier(0, func(current uint64) uint64 {
+				txbuilder.GasLimitModifier(cfg, 0, func(cfg config.Config, current uint64) uint64 {
 					return 46_000_000
 				}), // Set gas limit to 46_000_000
 			},
@@ -66,44 +93,17 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 			Desc:   "TRANSACTION_GAS_LIMIT_EXCEEDED: GasLimitTooHigh",
 			Method: "eth_sendRawTransaction",
 			Modifiers: []pkgTypes.Modifier{
-				GasLimitModifier(0, func(current uint64) uint64 {
+				txbuilder.GasLimitModifier(cfg, 0, func(cfg config.Config, current uint64) uint64 {
 					return 16_777_216 + 1
 				}), // Set gas limit to max transaction gas limit + 1
 			},
 		},
 		{
-			ID:     11,
-			Desc:   "GAS_PRICE_TOO_LOW-Legacy",
-			Method: "eth_sendRawTransaction",
-			Modifiers: []pkgTypes.Modifier{
-				GasPriceModifier(big.NewInt(0), nil),
-			},
-		},
-		{
-			ID:     11,
-			Desc:   "GAS_PRICE_TOO_LOW-Dynamic",
-			Method: "eth_sendRawTransaction",
-			Modifiers: []pkgTypes.Modifier{
-				GasTipCapModifier(big.NewInt(0), nil),
-				GasFeeCapModifier(big.NewInt(0), nil),
-			},
-		},
-		{
-			ID:     12,
-			Desc:   "FEE_CAP_EXCEEDED",
-			Method: "eth_sendRawTransaction",
-			Modifiers: []pkgTypes.Modifier{
-				GasLimitModifier(16_000_000, nil),
-				GasPriceModifier(big.NewInt(200000000000), nil),
-			},
-		},
-
-		{
 			ID:     13,
 			Desc:   "GAS_TOO_LOW - Intrinsic gas too low",
 			Method: "eth_sendRawTransaction",
 			Modifiers: []pkgTypes.Modifier{
-				GasLimitModifier(20000, nil), // Set gas limit to 20000 (below 21000 intrinsic gas)
+				txbuilder.GasLimitModifier(cfg, 20000, nil), // Set gas limit to 20000 (below 21000 intrinsic gas)
 			},
 		},
 		{
@@ -111,8 +111,11 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 			Desc:   "OUT_OF_GAS - Transaction runs out of gas",
 			Method: "eth_sendRawTransaction",
 			Modifiers: []pkgTypes.Modifier{
-				GasLimitModifier(0, func(current uint64) uint64 {
-					return 21204 // return only intricsic gas
+				txbuilder.GasLimitModifier(cfg, 0, func(cfg config.Config, current uint64) uint64 {
+					/* if cfg.LocalNodeType == "besu" {
+						return 21_204 // for besu it returns the hash, but fails in the node with INSUFFICIENT_GAS
+					} */
+					return 21_204 // return only intrinsic gas
 				}),
 			},
 		},
@@ -121,7 +124,8 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 			Desc:   "TipAboveFeeCap - max priority fee per gas higher than max fee per gas",
 			Method: "eth_sendRawTransaction",
 			Modifiers: []pkgTypes.Modifier{
-				GasFeeCapModifier(big.NewInt(5), nil),
+				txbuilder.GasFeeCapModifier(big.NewInt(10), nil), // for geth
+				// txbuilder.GasTipCapModifier(big.NewInt(2000000000), nil),
 			},
 		},
 		{
@@ -129,7 +133,7 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 			Desc:   "INSUFFICIENT_FUNDS - Not enough funds for gas * price + value",
 			Method: "eth_sendRawTransaction",
 			Modifiers: []pkgTypes.Modifier{
-				ValueFromBalanceModifier(1000000000000000000), // balance + 1 ETH
+				txbuilder.ValueFromBalanceModifier(1000000000000000000), // balance + 1 ETH
 			},
 		},
 		{
@@ -154,7 +158,7 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 					firstTx = types.NewTransaction(params.Nonce, *params.To, big.NewInt(1000), params.Gas, params.GasPrice, params.Data)
 				}
 
-				signedFirstTx, err := SignTransaction(firstTx, params)
+				signedFirstTx, err := txbuilder.SignTransaction(firstTx, params)
 				if err != nil {
 					return "", fmt.Errorf("error signing first transaction: %w", err)
 				}
@@ -190,7 +194,7 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 					firstTx = types.NewTransaction(params.Nonce, *params.To, big.NewInt(1000), params.Gas, params.GasPrice, params.Data)
 				}
 
-				signedFirstTx, err := SignTransaction(firstTx, params)
+				signedFirstTx, err := txbuilder.SignTransaction(firstTx, params)
 				if err != nil {
 					return "", fmt.Errorf("error signing first transaction: %w", err)
 				}
