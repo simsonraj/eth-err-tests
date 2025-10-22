@@ -41,7 +41,7 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 			Desc:   "NONCE_TOO_HIGH", // DOesnt work
 			Method: "eth_sendRawTransaction",
 			Modifiers: []pkgTypes.Modifier{
-				txbuilder.NonceModifier(0, func(current uint64) uint64 { return current + 10000 }),
+				txbuilder.NonceModifier(0, func(current uint64) uint64 { return current + 100 }),
 			},
 		},
 		{
@@ -50,26 +50,6 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 			Method: "eth_sendRawTransaction",
 			Modifiers: []pkgTypes.Modifier{
 				txbuilder.DataSizeModifier(1024 * 1024), // 1 MB
-			},
-		},
-		{
-			ID:     10,
-			Desc:   "BLOCK_GAS_LIMIT_EXCEEDED",
-			Method: "eth_sendRawTransaction",
-			Modifiers: []pkgTypes.Modifier{
-				txbuilder.GasLimitModifier(0, func(current uint64) uint64 {
-					return 46_000_000
-				}), // Set gas limit to 46_000_000
-			},
-		},
-		{
-			ID:     10,
-			Desc:   "TRANSACTION_GAS_LIMIT_EXCEEDED: GasLimitTooHigh",
-			Method: "eth_sendRawTransaction",
-			Modifiers: []pkgTypes.Modifier{
-				txbuilder.GasLimitModifier(0, func(current uint64) uint64 {
-					return 16_777_216 + 1
-				}), // Set gas limit to max transaction gas limit + 1
 			},
 		},
 		{
@@ -94,17 +74,36 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 			Desc:   "FEE_CAP_EXCEEDED",
 			Method: "eth_sendRawTransaction",
 			Modifiers: []pkgTypes.Modifier{
-				txbuilder.GasLimitModifier(16_000_000, nil),
+				txbuilder.GasLimitModifier(cfg, 16_000_000, nil),
 				txbuilder.GasPriceModifier(big.NewInt(200000000000), nil),
 			},
 		},
-
+		{
+			ID:     10,
+			Desc:   "BLOCK_GAS_LIMIT_EXCEEDED",
+			Method: "eth_sendRawTransaction",
+			Modifiers: []pkgTypes.Modifier{
+				txbuilder.GasLimitModifier(cfg, 0, func(cfg config.Config, current uint64) uint64 {
+					return 46_000_000
+				}), // Set gas limit to 46_000_000
+			},
+		},
+		{
+			ID:     10,
+			Desc:   "TRANSACTION_GAS_LIMIT_EXCEEDED: GasLimitTooHigh",
+			Method: "eth_sendRawTransaction",
+			Modifiers: []pkgTypes.Modifier{
+				txbuilder.GasLimitModifier(cfg, 0, func(cfg config.Config, current uint64) uint64 {
+					return 16_777_216 + 1
+				}), // Set gas limit to max transaction gas limit + 1
+			},
+		},
 		{
 			ID:     13,
 			Desc:   "GAS_TOO_LOW - Intrinsic gas too low",
 			Method: "eth_sendRawTransaction",
 			Modifiers: []pkgTypes.Modifier{
-				txbuilder.GasLimitModifier(20000, nil), // Set gas limit to 20000 (below 21000 intrinsic gas)
+				txbuilder.GasLimitModifier(cfg, 20000, nil), // Set gas limit to 20000 (below 21000 intrinsic gas)
 			},
 		},
 		{
@@ -112,8 +111,11 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 			Desc:   "OUT_OF_GAS - Transaction runs out of gas",
 			Method: "eth_sendRawTransaction",
 			Modifiers: []pkgTypes.Modifier{
-				txbuilder.GasLimitModifier(0, func(current uint64) uint64 {
-					return 21204 // return only intricsic gas
+				txbuilder.GasLimitModifier(cfg, 0, func(cfg config.Config, current uint64) uint64 {
+					/* if cfg.LocalNodeType == "besu" {
+						return 21_204 // for besu it returns the hash, but fails in the node with INSUFFICIENT_GAS
+					} */
+					return 21_204 // return only intrinsic gas
 				}),
 			},
 		},
@@ -122,7 +124,8 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 			Desc:   "TipAboveFeeCap - max priority fee per gas higher than max fee per gas",
 			Method: "eth_sendRawTransaction",
 			Modifiers: []pkgTypes.Modifier{
-				txbuilder.GasFeeCapModifier(big.NewInt(5), nil),
+				txbuilder.GasFeeCapModifier(big.NewInt(10), nil), // for geth
+				// txbuilder.GasTipCapModifier(big.NewInt(2000000000), nil),
 			},
 		},
 		{

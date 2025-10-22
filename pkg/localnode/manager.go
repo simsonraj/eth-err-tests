@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"math/big"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/eth-error-tests/pkg/config"
 	"github.com/eth-error-tests/pkg/jsonrpc"
 	pkgTypes "github.com/eth-error-tests/pkg/types"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
@@ -65,11 +65,18 @@ func (nm *NodeManager) StartAndFund() (string, error) {
 			"--password", "/dev/null", // Empty password for dev mode
 		)
 	case "besu":
+		// Get the absolute path to the genesis.json file
+		_, currentFile, _, _ := runtime.Caller(0)
+		pkgDir := filepath.Dir(currentFile)
+		genesisPath := filepath.Join(pkgDir, "besu", "genesis.json")
+		// https://besu.hyperledger.org/public-networks/reference/cli/options#min-priority-fee
 		cmd = exec.Command("docker", "run", "-d",
 			"--name", containerName,
 			"-p", "8545:8545",
+			// https://github.com/hyperledger/besu/blob/750580dcca349d22d024cc14a8171b2fa74b505a/config/src/main/resources/dev.json
+			"-v", fmt.Sprintf("%s:/genesis.json:ro", genesisPath), // Mount genesis file as read-only
 			"hyperledger/besu:latest",
-			"--network=dev",
+			"--genesis-file=/genesis.json",
 			"--miner-enabled",
 			"--miner-coinbase=0xfe3b557e8fb62b89f4916b721be55ceb828dbd73",
 			"--rpc-http-enabled",
@@ -78,6 +85,10 @@ func (nm *NodeManager) StartAndFund() (string, error) {
 			"--rpc-http-api=ETH,NET,WEB3,DEBUG",
 			"--rpc-http-cors-origins=*",
 			"--host-allowlist=*",
+			"--rpc-gas-cap=167700000",
+			"--min-gas-price=10",
+			"--min-priority-fee=10",
+			"--rpc-tx-feecap=100000000000",
 			"--logging=DEBUG",
 		)
 	default:
@@ -219,7 +230,17 @@ func (nm *NodeManager) FundAccount(fromAddr, toAddr string) error {
 		if err != nil {
 			return err
 		}
-		return nm.waitForFundingTransaction(client, txHash, to)
+		receipt, err := jsonrpc.WaitForTransaction(client, txHash)
+		if err != nil {
+			return err
+		}
+		if receipt.Status == 1 {
+			balance, err := client.BalanceAt(context.Background(), to, nil)
+			if err != nil {
+				return fmt.Errorf("failed to verify balance: %w", err)
+			}
+			fmt.Printf("Test account: %s funded: (balance: %s wei)\n", to.Hex(), balance.String())
+		}
 	}
 
 	return nil
@@ -247,49 +268,10 @@ func (nm *NodeManager) fundAccountUnlocked(fromAddr, toAddr string) (string, err
 		return "", fmt.Errorf("failed to send transaction: %w", err)
 	}
 
-	// SendRawJSONRPCRequest returns an array response (batch format)
-	var batchResult []map[string]interface{}
-	if err := json.Unmarshal([]byte(response), &batchResult); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	if len(batchResult) == 0 {
-		return "", fmt.Errorf("empty response")
-	}
-
-	result := batchResult[0]
-	if errObj, ok := result["error"]; ok {
-		return "", fmt.Errorf("RPC error: %v", errObj)
-	}
-
-	txHash, ok := result["result"].(string)
-	if !ok {
-		return "", fmt.Errorf("unexpected response format: %v", result)
-	}
-
-	return txHash, nil
-}
-
-func (nm *NodeManager) waitForFundingTransaction(client *ethclient.Client, txHash string, to common.Address) error {
-	tx, isPending, err := client.TransactionByHash(context.Background(), common.HexToHash(txHash))
+	txhashes, err := jsonrpc.BatchResponseToTxHashes(response)
 	if err != nil {
-		return fmt.Errorf("failed to get transaction receipt: %w", err)
-	}
-	var receipt *types.Receipt
-	if isPending {
-		receipt, err = bind.WaitMined(context.Background(), client, tx)
-		if err != nil {
-			return fmt.Errorf("failed to wait for transaction mining: %w", err)
-		}
+		return "", fmt.Errorf("failed to parse transaction hash: %w", err)
 	}
 
-	if receipt.Status == 1 {
-		balance, err := client.BalanceAt(context.Background(), to, nil)
-		if err != nil {
-			return fmt.Errorf("failed to verify balance: %w", err)
-		}
-		fmt.Printf("Test account: %s funded: (balance: %s wei)\n", to.Hex(), balance.String())
-		return nil
-	}
-	return nil
+	return txhashes[0], nil
 }

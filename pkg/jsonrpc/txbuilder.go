@@ -97,10 +97,10 @@ func SignTransaction(tx *types.Transaction, params *pkgTypes.TxParams) (*types.T
 }
 
 // --- Generic Modifiers with Transformation Functions ---
-func GasLimitModifier(value uint64, transform func(current uint64) uint64) pkgTypes.Modifier {
+func GasLimitModifier(cfg config.Config, value uint64, transform func(cfg config.Config, current uint64) uint64) pkgTypes.Modifier {
 	return func(ctx context.Context, client *ethclient.Client, params *pkgTypes.TxParams) error {
 		if transform != nil {
-			params.Gas = transform(params.Gas)
+			params.Gas = transform(cfg, params.Gas)
 		} else {
 			params.Gas = value
 		}
