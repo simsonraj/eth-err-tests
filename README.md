@@ -12,8 +12,15 @@ export PRIVATE_KEY=your_private_key_here
 
 2. Run tests:
 ```bash
+# Test with Geth
 go run main.go --env=geth-local > reports/geth-local.log
+
+# Test with Besu
+go run main.go --env=besu-local > reports/besu-local.log
 ```
+
+**Note:** Besu dev mode comes with a pre-funded account:
+https://besu.hyperledger.org/private-networks/reference/accounts-for-testing
 
 
 ## Generate Reports
