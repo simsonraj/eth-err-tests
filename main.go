@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"encoding/csv"
-	"flag"
 	"fmt"
 	"os"
 	"regexp"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/eth-error-tests/pkg/config"
 	"github.com/eth-error-tests/pkg/runner"
+	"github.com/spf13/cobra"
 )
 
 func Report(filename string) {
@@ -64,97 +64,80 @@ func Report(filename string) {
 	}
 }
 
-func printUsage() {
-	fmt.Println("Ethereum RPC Client Tester")
-	fmt.Println("==========================")
-	fmt.Println()
-	fmt.Println("Usage:")
-	fmt.Println("  ./main --env=<network> [--tests=<test_names>] [--report=<logfile>]")
-	fmt.Println()
-	fmt.Println("Flags:")
-	fmt.Println("  --env        : Network/client to test (required)")
-	fmt.Println("                 Docker Clients: besu-local, geth-local, reth-local,")
-	fmt.Println("                                 nethermind-local, erigon-local")
-	fmt.Println("                 Remote Networks: zksync, zkevm")
-	fmt.Println("  --tests      : Comma-separated list of specific tests to run (optional)")
-	fmt.Println("                 Available: eth_getBalance, eth_getCode, eth_call,")
-	fmt.Println("                            eth_estimateGas, eth_sendRawTransaction")
-	fmt.Println("                 If not specified, all tests will be run")
-	fmt.Println("  --report     : Generate CSV report from log file (optional)")
-	fmt.Println()
-	fmt.Println("Examples:")
-	fmt.Println("  # Test on local Besu via Docker")
-	fmt.Println("  ./main --env=besu-local")
-	fmt.Println()
-	fmt.Println()
-	fmt.Println("  # Run specific tests on zkEVM")
-	fmt.Println("  ./main --env=zkevm --tests=eth_call,eth_estimateGas")
-	fmt.Println()
-	fmt.Println("  # Generate report from log file")
-	fmt.Println("  ./main --report=zksync.log")
-	fmt.Println()
+var (
+	env   string
+	tests string
+)
+
+var rootCmd = &cobra.Command{
+	Use: "eth-err-tests",
+	Long: `Ethereum RPC Client Tester
+	Docker Clients: besu-local, geth-local, reth-local, nethermind-local, erigon-local
+	Remote Networks: sepolia, zkevm`,
+	Example: ` #Test on local geth via Docker
+  eth-err-tests --env geth-local
+
+  # Run specific tests on zkEVM
+  eth-err-tests --env zkevm --tests eth_call,eth_estimateGas`,
+	Run: func(cmd *cobra.Command, args []string) {
+		cfg, err := config.GetConfig(env)
+		if err != nil {
+			fmt.Printf("Error: Invalid environment '%s': %v\n", env, err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("Testing Network: %s\n", cfg.Network)
+		fmt.Printf("RPC URL: %s\n", cfg.Url)
+		fmt.Println("=======================================================")
+		fmt.Println()
+
+		testRunner, err := runner.NewTestRunner(cfg)
+		if err != nil {
+			fmt.Printf("Error creating test runner: %v\n", err)
+			os.Exit(1)
+		}
+		defer testRunner.Cleanup()
+
+		var testNames []string
+		if tests != "" {
+			testNames = strings.Split(tests, ",")
+			for i := range testNames {
+				testNames[i] = strings.TrimSpace(testNames[i])
+			}
+		}
+
+		if err := testRunner.RunWithAutoDeployment(testNames); err != nil {
+			fmt.Printf("Error running tests: %v\n", err)
+			os.Exit(1)
+		}
+	},
 }
 
-func run() int {
-	env := flag.String("env", "", "Network/client to test (e.g., zksync, zkevm)")
-	testsFlag := flag.String("tests", "", "Comma-separated list of tests to run (optional)")
-	logFile := flag.String("report", "", "Generate CSV report from log file")
-	help := flag.Bool("help", false, "Show usage information")
-	flag.Parse()
+var reportCmd = &cobra.Command{
+	Use:     "report [logfile]",
+	Long:    "Generate a CSV report from a test log file",
+	Example: `eth-err-tests report reports/geth-local.log`,
+	Args:    cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		logFile := args[0]
+		fmt.Println("Generating report from log file:", logFile)
+		Report(logFile)
+	},
+}
 
-	if *help || (flag.NFlag() == 0) {
-		printUsage()
-		return 0
-	}
+func init() {
+	// Root command
+	rootCmd.Flags().StringVarP(&env, "env", "e", "", "Network/client to test (required)")
+	rootCmd.Flags().StringVarP(&tests, "tests", "t", "", "Comma-separated list of tests to run (e.g., eth_getBalance,eth_getCode,eth_call,eth_estimateGas,eth_sendRawTransaction)")
+	rootCmd.MarkFlagRequired("env")
 
-	if *logFile != "" {
-		fmt.Println("Generating report from log file:", *logFile)
-		Report(*logFile)
-		return 0
-	}
-
-	if *env == "" {
-		fmt.Println("Error: --env flag is required")
-		fmt.Println()
-		printUsage()
-		return 1
-	}
-
-	cfg, err := config.GetConfig(*env)
-	if err != nil {
-		fmt.Printf("Error: Invalid environment '%s': %v\n", *env, err)
-		fmt.Println()
-		printUsage()
-		return 1
-	}
-
-	fmt.Printf("Testing Network: %s\n", cfg.Network)
-	fmt.Printf("RPC URL: %s\n", cfg.Url)
-	fmt.Println("=======================================================")
-	fmt.Println()
-
-	testRunner, err := runner.NewTestRunner(cfg)
-	if err != nil {
-		fmt.Printf("Error creating test runner: %v\n", err)
-		return 1
-	}
-	defer testRunner.Cleanup()
-
-	var testNames []string
-	if *testsFlag != "" {
-		testNames = strings.Split(*testsFlag, ",")
-		for i := range testNames {
-			testNames[i] = strings.TrimSpace(testNames[i])
-		}
-	}
-
-	if err := testRunner.RunWithAutoDeployment(testNames); err != nil {
-		fmt.Printf("Error running tests: %v\n", err)
-		return 1
-	}
-	return 0
+	// report command
+	rootCmd.AddCommand(reportCmd)
 }
 
 func main() {
-	os.Exit(run())
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 }

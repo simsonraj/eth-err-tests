@@ -12,8 +12,18 @@ export PRIVATE_KEY=your_private_key_here
 
 2. Run tests:
 ```bash
-go run main.go -client geth-local > logs/geth-local.log
+go run main.go --env=geth-local > reports/geth-local.log
 ```
+
+
+## Generate Reports
+
+Convert logs to CSV:
+```bash
+go run main.go report reports/geth-local.log
+```
+
+Output: `geth-local.csv`
 
 ## Add New Clients
 
@@ -38,11 +48,3 @@ case "myclient":
 
 Add the new client docker setup in localnode/manager.go
 
-## Generate Reports
-
-Convert logs to CSV:
-```bash
-go run main.go -report logs/geth-local.log
-```
-
-Output: `geth-local.csv`
