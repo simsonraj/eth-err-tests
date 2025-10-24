@@ -8,7 +8,6 @@ import (
 
 	"github.com/eth-error-tests/pkg/config"
 	"github.com/eth-error-tests/pkg/contract"
-	"github.com/eth-error-tests/pkg/jsonrpc"
 	txbuilder "github.com/eth-error-tests/pkg/jsonrpc"
 	pkgTypes "github.com/eth-error-tests/pkg/types"
 	"github.com/ethereum/go-ethereum/common"
@@ -264,8 +263,8 @@ var ethEstimateGasPresend pkgTypes.PreSendFunc = func(ctx context.Context, clien
 		},
 	}
 
-	resp, _ := jsonrpc.SendRawJSONRPCRequest(cfg.Url, estimateReq)
-	return string(params.Data), fmt.Errorf(resp)
+	resp, _ := txbuilder.SendRawJSONRPCRequest(cfg.Url, estimateReq)
+	return string(params.Data), fmt.Errorf("%s", resp)
 }
 
 // Pass no options to create an identical transaction (for ALREADY_KNOWN scenarios).
