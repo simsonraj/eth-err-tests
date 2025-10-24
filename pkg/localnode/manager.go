@@ -42,7 +42,9 @@ func (nm *NodeManager) StartAndFund() (string, error) {
 
 	checkCmd := exec.Command("docker", "ps", "-aq", "--filter", fmt.Sprintf("name=%s", containerName))
 	if output, err := checkCmd.Output(); err == nil && len(strings.TrimSpace(string(output))) > 0 {
-		exec.Command("docker", "rm", "-f", containerName).Run()
+		if err := exec.Command("docker", "rm", "-f", containerName).Run(); err != nil {
+			fmt.Printf("Warning: failed to remove existing container: %v\n", err)
+		}
 	}
 
 	var cmd *exec.Cmd
@@ -106,14 +108,18 @@ func (nm *NodeManager) StartAndFund() (string, error) {
 	fmt.Printf("Container started: %s\n", nm.containerID)
 
 	if err := nm.waitForNode(); err != nil {
-		nm.Stop()
+		if stopErr := nm.Stop(); stopErr != nil {
+			fmt.Printf("Warning: failed to stop node after wait error: %v\n", stopErr)
+		}
 		return "", err
 	}
 
 	fmt.Println("Node ready")
 	devAccount, err := nm.getDevAccount()
 	if err != nil {
-		nm.Stop()
+		if stopErr := nm.Stop(); stopErr != nil {
+			fmt.Printf("Warning: failed to stop node after account error: %v\n", stopErr)
+		}
 		return "", fmt.Errorf("failed to get dev account: %w", err)
 	}
 
@@ -194,7 +200,9 @@ func (nm *NodeManager) Stop() error {
 	}
 	fmt.Printf("Stopping %s...\n", nm.config.LocalNodeType)
 	containerName := fmt.Sprintf("eip-test-%s", nm.config.LocalNodeType)
-	exec.Command("docker", "rm", "-f", containerName).Run()
+	if err := exec.Command("docker", "rm", "-f", containerName).Run(); err != nil {
+		fmt.Printf("Warning: failed to remove container: %v\n", err)
+	}
 	nm.started = false
 	return nil
 }

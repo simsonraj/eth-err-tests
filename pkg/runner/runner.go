@@ -51,6 +51,8 @@ func (r *TestRunner) DeployContracts() error {
 	// Extend this to deploy all contracts if needed
 	contractsToDepl := []contract.Name{
 		contract.Storage,
+		contract.OpCodes,
+		contract.TestKeccak,
 	}
 
 	deployedContracts, errors := r.deployer.DeploySpecificContracts(contractsToDepl)
@@ -59,6 +61,7 @@ func (r *TestRunner) DeployContracts() error {
 	}
 
 	r.deployedContracts = deployedContracts
+	r.config.DeployedContracts = deployedContracts
 
 	// Update the config with deployed contract addresses
 	if storageAddr, ok := deployedContracts["storage"]; ok {

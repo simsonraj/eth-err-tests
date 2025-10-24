@@ -18,13 +18,21 @@ func Report(filename string) {
 	if err != nil {
 		panic(err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			fmt.Printf("Error closing file: %v\n", err)
+		}
+	}()
 
 	outputFile, err := os.Create(filename + ".csv")
 	if err != nil {
 		panic(err)
 	}
-	defer outputFile.Close()
+	defer func() {
+		if err := outputFile.Close(); err != nil {
+			fmt.Printf("Error closing output file: %v\n", err)
+		}
+	}()
 
 	scanner := bufio.NewScanner(file)
 	writer := csv.NewWriter(outputFile)
@@ -129,7 +137,9 @@ func init() {
 	// Root command
 	rootCmd.Flags().StringVarP(&env, "env", "e", "", "Network/client to test (required)")
 	rootCmd.Flags().StringVarP(&tests, "tests", "t", "", "Comma-separated list of tests to run (e.g., eth_getBalance,eth_getCode,eth_call,eth_estimateGas,eth_sendRawTransaction)")
-	rootCmd.MarkFlagRequired("env")
+	if err := rootCmd.MarkFlagRequired("env"); err != nil {
+		panic(err)
+	}
 
 	// report command
 	rootCmd.AddCommand(reportCmd)

@@ -3,18 +3,21 @@ package config
 import (
 	"errors"
 	"os"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // Config holds the configuration for connecting to an Ethereum client
 type Config struct {
-	Network         string
-	Url             string
-	From            string // Will be updated with derived address from PrivateKey
-	ToContract      string // Will be updated with deployed contract address
-	PrivateKey      string
-	ChainID         int64
-	InvalidContract string
-	LocalNodeType   string // Type of local node: "besu", "geth", "reth", etc.
+	Network           string
+	Url               string
+	From              string // Will be updated with derived address from PrivateKey
+	ToContract        string // Will be updated with deployed contract address
+	DeployedContracts map[string]common.Address
+	PrivateKey        string
+	ChainID           int64
+	InvalidContract   string
+	LocalNodeType     string // Type of local node: "besu", "geth", "reth", etc.
 }
 
 var (
@@ -27,10 +30,15 @@ var (
 	}
 
 	sepoliaConfig = Config{
-		Network:         "Sepolia",
-		Url:             "https://ethereum-sepolia-rpc.publicnode.com",
-		PrivateKey:      os.Getenv("PRIVATE_KEY"),
-		ToContract:      "0x3a059AC08A7A27e972DBDD00E4595742471137d8",
+		Network:    "Sepolia",
+		Url:        "https://ethereum-sepolia-rpc.publicnode.com",
+		PrivateKey: os.Getenv("PRIVATE_KEY"),
+		DeployedContracts: map[string]common.Address{
+			"storage":    common.HexToAddress("0xfB1fa32605b1Cd1B91d1B80CCC7dde8EDab643D3"),
+			"opcodes":    common.HexToAddress("0xBeDBEdeB6362681Ad8d1f87FC600418db3A20521"),
+			"testkeccak": common.HexToAddress("0xF603Da4416330A1715ADb9B5407505573C4FD8c7"),
+		},
+		ToContract:      "0xfB1fa32605b1Cd1B91d1B80CCC7dde8EDab643D3",
 		ChainID:         11155111,
 		InvalidContract: "0x0baEAd25fe0346B76C73e84c083bb503c14309F1",
 	}
