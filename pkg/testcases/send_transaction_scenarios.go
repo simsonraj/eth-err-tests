@@ -2,10 +2,13 @@ package testcases
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 
 	"github.com/eth-error-tests/pkg/config"
+	"github.com/eth-error-tests/pkg/contract"
+	"github.com/eth-error-tests/pkg/jsonrpc"
 	txbuilder "github.com/eth-error-tests/pkg/jsonrpc"
 	pkgTypes "github.com/eth-error-tests/pkg/types"
 	"github.com/ethereum/go-ethereum/common"
@@ -130,6 +133,44 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 		},
 		{
 			ID:     20,
+			Desc:   "INVALID_OPCODE",
+			Method: "eth_sendRawTransaction",
+			Modifiers: []pkgTypes.Modifier{
+				txbuilder.DataModifier(func() []byte {
+					input, err := contract.BuildInput(contract.OpCodes, "test_invalid")
+					if err != nil {
+						panic(fmt.Sprintf("error building input for test_revert: %v", err))
+					}
+					return input
+				}()),
+				txbuilder.ToAddressModifier(cfg, "", func(cfg config.Config, current *common.Address) *common.Address {
+					addr := cfg.DeployedContracts["opcodes"]
+					return &addr
+				}),
+			},
+			PreSend: ethEstimateGasPresend,
+		},
+		{
+			ID:     20,
+			Desc:   "REVERT_OPCODE",
+			Method: "eth_sendRawTransaction",
+			Modifiers: []pkgTypes.Modifier{
+				txbuilder.DataModifier(func() []byte {
+					input, err := contract.BuildInput(contract.OpCodes, "test_revert")
+					if err != nil {
+						panic(fmt.Sprintf("error building input for test_revert: %v", err))
+					}
+					return input
+				}()),
+				txbuilder.ToAddressModifier(cfg, "", func(cfg config.Config, current *common.Address) *common.Address {
+					addr := cfg.DeployedContracts["opcodes"]
+					return &addr
+				}),
+			},
+			PreSend: ethEstimateGasPresend,
+		},
+		{
+			ID:     20,
 			Desc:   "INSUFFICIENT_FUNDS - Not enough funds for gas * price + value",
 			Method: "eth_sendRawTransaction",
 			Modifiers: []pkgTypes.Modifier{
@@ -141,72 +182,14 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 			Desc:     "REPLACEMENT_TRANSACTION_UNDERPRICED - Replacement without price bump",
 			Method:   "eth_sendRawTransaction",
 			UseBatch: true,
-			PreSend: func(ctx context.Context, client *ethclient.Client, cfg config.Config, params *pkgTypes.TxParams) (string, error) {
-				var firstTx *types.Transaction
-				if params.IsDynamic {
-					firstTx = types.NewTx(&types.DynamicFeeTx{
-						ChainID:   big.NewInt(params.ChainID),
-						Nonce:     params.Nonce,
-						GasTipCap: params.GasTipCap,
-						GasFeeCap: params.GasFeeCap,
-						Gas:       params.Gas,
-						To:        params.To,
-						Value:     big.NewInt(1000), // Different value to make it a different transaction
-						Data:      params.Data,
-					})
-				} else {
-					firstTx = types.NewTransaction(params.Nonce, *params.To, big.NewInt(1000), params.Gas, params.GasPrice, params.Data)
-				}
-
-				signedFirstTx, err := txbuilder.SignTransaction(firstTx, params)
-				if err != nil {
-					return "", fmt.Errorf("error signing first transaction: %w", err)
-				}
-
-				encodedFirstTx, err := signedFirstTx.MarshalBinary()
-				if err != nil {
-					return "", fmt.Errorf("error encoding first transaction: %w", err)
-				}
-
-				rawFirstTx := "0x" + common.Bytes2Hex(encodedFirstTx)
-				return rawFirstTx, nil
-			},
+			PreSend:  createBatchTx(big.NewInt(1000)),
 		},
 		{
 			ID:       22,
 			Desc:     "ALREADY_KNOWN ",
 			Method:   "eth_sendRawTransaction",
 			UseBatch: true,
-			PreSend: func(ctx context.Context, client *ethclient.Client, cfg config.Config, params *pkgTypes.TxParams) (string, error) {
-				var firstTx *types.Transaction
-				if params.IsDynamic {
-					firstTx = types.NewTx(&types.DynamicFeeTx{
-						ChainID:   big.NewInt(params.ChainID),
-						Nonce:     params.Nonce,
-						GasTipCap: params.GasTipCap,
-						GasFeeCap: params.GasFeeCap,
-						Gas:       params.Gas,
-						To:        params.To,
-						Value:     params.Value,
-						Data:      params.Data,
-					})
-				} else {
-					firstTx = types.NewTransaction(params.Nonce, *params.To, big.NewInt(1000), params.Gas, params.GasPrice, params.Data)
-				}
-
-				signedFirstTx, err := txbuilder.SignTransaction(firstTx, params)
-				if err != nil {
-					return "", fmt.Errorf("error signing first transaction: %w", err)
-				}
-
-				encodedFirstTx, err := signedFirstTx.MarshalBinary()
-				if err != nil {
-					return "", fmt.Errorf("error encoding first transaction: %w", err)
-				}
-
-				rawFirstTx := "0x" + common.Bytes2Hex(encodedFirstTx)
-				return rawFirstTx, nil
-			},
+			PreSend:  createBatchTx(nil), // No options - sends identical transaction
 		},
 
 		/*
@@ -262,5 +245,62 @@ func GetScenarios(cfg config.Config) []pkgTypes.Scenario {
 											ToAddressModifier("0x0000000000000000000000000000000000000000"),
 										},
 									}, */
+	}
+}
+
+var ethEstimateGasPresend pkgTypes.PreSendFunc = func(ctx context.Context, client *ethclient.Client, cfg config.Config, params *pkgTypes.TxParams) (string, error) {
+	estimateReq := []pkgTypes.JsonRpcRequest{
+		{
+			JsonRpc: "2.0",
+			Id:      1,
+			Method:  "eth_estimateGas",
+			Params: []interface{}{
+				map[string]string{
+					"from": params.FromAddress.Hex(),
+					"to":   params.To.Hex(),
+					"data": "0x" + hex.EncodeToString(params.Data),
+				},
+			},
+		},
+	}
+
+	resp, _ := jsonrpc.SendRawJSONRPCRequest(cfg.Url, estimateReq)
+	return string(params.Data), fmt.Errorf(resp)
+}
+
+// Pass no options to create an identical transaction (for ALREADY_KNOWN scenarios).
+var createBatchTx = func(newValue *big.Int) pkgTypes.PreSendFunc {
+	return func(ctx context.Context, client *ethclient.Client, cfg config.Config, params *pkgTypes.TxParams) (string, error) {
+		var firstTx *types.Transaction
+		if newValue == nil {
+			newValue = params.Value
+		}
+		if params.IsDynamic {
+			firstTx = types.NewTx(&types.DynamicFeeTx{
+				ChainID:   big.NewInt(params.ChainID),
+				Nonce:     params.Nonce,
+				GasTipCap: params.GasTipCap,
+				GasFeeCap: params.GasFeeCap,
+				Gas:       params.Gas,
+				To:        params.To,
+				Value:     newValue,
+				Data:      params.Data,
+			})
+		} else {
+			firstTx = types.NewTransaction(params.Nonce, *params.To, newValue, params.Gas, params.GasPrice, params.Data)
+		}
+
+		signedFirstTx, err := txbuilder.SignTransaction(firstTx, params)
+		if err != nil {
+			return "", fmt.Errorf("error signing first transaction: %w", err)
+		}
+
+		encodedFirstTx, err := signedFirstTx.MarshalBinary()
+		if err != nil {
+			return "", fmt.Errorf("error encoding first transaction: %w", err)
+		}
+
+		rawFirstTx := "0x" + common.Bytes2Hex(encodedFirstTx)
+		return rawFirstTx, nil
 	}
 }

@@ -53,8 +53,8 @@ type Scenario struct {
 	Desc      string
 	Method    string
 	Modifiers []Modifier
-	PreSend   func(ctx context.Context, client *ethclient.Client, cfg config.Config, params *TxParams) (string, error) // Returns first raw tx for batch
-	UseBatch  bool                                                                                                     // If true, PreSend should return a raw transaction to send in batch
+	PreSend   PreSendFunc // Returns first raw tx for batch
+	UseBatch  bool        // If true, PreSend should return a raw transaction to send in batch
 }
 
 type TxParams struct {
@@ -74,6 +74,9 @@ type TxParams struct {
 
 // Modifier is a function that modifies transaction parameters to simulate different scenarios
 type Modifier func(ctx context.Context, client *ethclient.Client, params *TxParams) error
+
+// PreSendFunc is a function that executes before sending a transaction, typically for batch scenarios.
+type PreSendFunc func(ctx context.Context, client *ethclient.Client, cfg config.Config, params *TxParams) (string, error)
 
 type Meta struct {
 	JsonRpcRequest `json:"jsonrpc"`

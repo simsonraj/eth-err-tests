@@ -74,3 +74,17 @@ func ArtifactFromContract(name Name) (Artifact, error) {
 		Bytecode: contractJSON.Bytecode,
 	}, nil
 }
+
+func BuildInput(contract Name, method string, args ...interface{}) ([]byte, error) {
+	artifact, err := ArtifactFromContract(contract)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing ABI: %w", err)
+	}
+
+	input, err := artifact.Abi.Pack(method, args...)
+	if err != nil {
+		return nil, fmt.Errorf("error packing ABI: %w", err)
+	}
+
+	return input, nil
+}

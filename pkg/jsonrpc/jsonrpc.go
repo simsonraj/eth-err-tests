@@ -8,17 +8,17 @@ import (
 	"io/ioutil"
 	"math/big"
 	"net/http"
-	"strings"
 	"time"
 
-	"github.com/eth-error-tests/pkg/config"
-	"github.com/eth-error-tests/pkg/types"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	gethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+
+	"github.com/eth-error-tests/pkg/config"
+	"github.com/eth-error-tests/pkg/contract"
+	"github.com/eth-error-tests/pkg/types"
 )
 
 const (
@@ -91,7 +91,7 @@ func SendTransaction(ctx context.Context, client *ethclient.Client, cfg config.C
 	toAddress := common.HexToAddress(cfg.ToContract)
 
 	// 2. Build default input data
-	input, err := BuildDefaultInput()
+	input, err := contract.BuildInput(contract.Storage, "store", new(big.Int).SetUint64(20))
 	if err != nil {
 		return fmt.Errorf("error building input: %w", err)
 	}
@@ -111,11 +111,9 @@ func SendTransaction(ctx context.Context, client *ethclient.Client, cfg config.C
 
 	// 5. Execute pre-send hook (for replacement scenarios)
 	var batchTx string
+	var presendErr error
 	if scenario.PreSend != nil {
-		batchTx, err = scenario.PreSend(ctx, client, cfg, params)
-		if err != nil {
-			fmt.Printf("Warning: PreSend failed: %v\n", err)
-		}
+		batchTx, presendErr = scenario.PreSend(ctx, client, cfg, params)
 	}
 
 	// 6. Build transaction
@@ -173,12 +171,18 @@ func SendTransaction(ctx context.Context, client *ethclient.Client, cfg config.C
 
 	// 13. Print response
 	var data interface{}
+	var printResp string
 	if err := json.Unmarshal([]byte(response), &data); err == nil {
 		compactJSON, _ := json.Marshal(data)
-		fmt.Println("Response:", string(compactJSON))
+		printResp = string(compactJSON)
 	} else {
-		fmt.Println("Response:", response)
+		printResp = response
 	}
+	if presendErr != nil {
+		printResp += fmt.Sprintf(", PreSend Error: %v", presendErr)
+	}
+
+	fmt.Println("Response:", printResp)
 	hashes, err := BatchResponseToTxHashes(response)
 	if err != nil {
 		return fmt.Errorf("failed to parse transaction hashes from response: %w", err)
@@ -189,20 +193,6 @@ func SendTransaction(ctx context.Context, client *ethclient.Client, cfg config.C
 	}
 
 	return nil
-}
-
-func BuildDefaultInput() ([]byte, error) {
-	contractABI, err := abi.JSON(strings.NewReader(CONTRACT_ABI))
-	if err != nil {
-		return nil, fmt.Errorf("error parsing ABI: %w", err)
-	}
-
-	input, err := contractABI.Pack("store", new(big.Int).SetUint64(20))
-	if err != nil {
-		return nil, fmt.Errorf("error packing ABI: %w", err)
-	}
-
-	return input, nil
 }
 
 func WaitForTransaction(client *ethclient.Client, txHash string) (*gethTypes.Receipt, error) {

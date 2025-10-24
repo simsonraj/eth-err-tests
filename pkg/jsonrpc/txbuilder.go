@@ -31,8 +31,11 @@ func NewTxParamsFromDefaults(ctx context.Context, client *ethclient.Client, cfg 
 		Data: input,
 	})
 	if err != nil {
-		gasLimit = 100000
+		return nil, fmt.Errorf("error estimating gas: %w", err)
 	}
+	/* if err != nil {
+		gasLimit = 100000
+	} */
 
 	// Get suggested gas price
 	gasPrice, err := client.SuggestGasPrice(ctx)
@@ -211,10 +214,14 @@ func PrivateKeyModifier(privateKeyHex string) pkgTypes.Modifier {
 	}
 }
 
-func ToAddressModifier(address string) pkgTypes.Modifier {
+func ToAddressModifier(cfg config.Config, address string, transform func(cfg config.Config, current *common.Address) *common.Address) pkgTypes.Modifier {
 	return func(ctx context.Context, client *ethclient.Client, params *pkgTypes.TxParams) error {
-		addr := common.HexToAddress(address)
-		params.To = &addr
+		if transform != nil {
+			params.To = transform(cfg, params.To)
+		} else {
+			addr := common.HexToAddress(address)
+			params.To = &addr
+		}
 		return nil
 	}
 }
