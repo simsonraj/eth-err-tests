@@ -3,7 +3,7 @@
 Test suite for validating error code implementations across different Ethereum clients.
 Test scenarios for eth_ methods are [here](https://github.com/simsonraj/eth-err-tests/tree/master/pkg/testcases)
 ## Setup
-The tests can be run against different Ethereum clients locally using docker or an Actual RPCs
+The tests can be run against different Ethereum clients locally with docker or an actual CHAIN's RPCs
 
 1. Set your private key:
 ```bash
