@@ -1,7 +1,7 @@
 # Ethereum Clients Error Codes Test suite
 
 Test suite for validating error code implementations across different Ethereum clients.
-
+Test scenarios for eth_ methods are [here](https://github.com/simsonraj/eth-err-tests/blob/master/pkg/testcases/send_transaction_scenarios.go)
 ## Setup
 The tests can be run against different Ethereum clients locally using docker or an Actual RPCs
 
